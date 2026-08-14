@@ -39,4 +39,10 @@ jobs:
       - name: Health check
         run: |
           docker ps --filter name=fb-core --format '{{.Names}} {{.Status}}'
-          curl -sf http://localhost:8000/api/status
+          for attempt in $(seq 1 12); do
+            if curl -sf http://localhost:8000/api/status; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1

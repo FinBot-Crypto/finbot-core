@@ -32,6 +32,7 @@ BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
 MAX_POSITIONS = int(os.getenv("MAX_POSITIONS", "20"))
+MAX_ORDER_NOTIONAL_USDT = float(os.getenv("MAX_ORDER_NOTIONAL_USDT", "25"))
 
 
 class CoreExecService:
@@ -167,6 +168,16 @@ class CoreExecService:
             order = validate_trade_order(raw)
         except ValueError as exc:
             logger.error("Payload inválido: %s", exc)
+            return None
+
+        requested_notional = float(order.get("notional_usdt") or 0)
+        if requested_notional > MAX_ORDER_NOTIONAL_USDT:
+            logger.warning(
+                "Ordem recusada pelo teto do Core: %s > %s USDT (%s)",
+                requested_notional,
+                MAX_ORDER_NOTIONAL_USDT,
+                order.get("client_order_id"),
+            )
             return None
 
         if await self.position_exists(order):

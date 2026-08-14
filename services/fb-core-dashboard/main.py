@@ -279,16 +279,23 @@ async def get_dashboard_data():
 
         cur.execute(
             f"""
-            SELECT symbol, entry_price, quantity, opened_at {TZ_EXPR}
+            SELECT block_id, direction, venue, strategy, tier,
+                   symbol, entry_price, quantity, opened_at {TZ_EXPR}
             FROM positions WHERE status = 'OPEN'
             """
         )
         active_positions = [
             {
-                "symbol": r[0],
-                "entry_price": float(r[1]) if r[1] is not None else None,
-                "quantity": float(r[2]) if r[2] is not None else None,
-                "created_at": r[3].strftime("%d/%m %H:%M") if r[3] else "",
+                "block_id": r[0],
+                "direction": r[1] or "LONG",
+                "venue": r[2] or "spot",
+                "strategy": r[3],
+                "tier": r[4],
+                "symbol": r[5],
+                "entry_price": float(r[6]) if r[6] is not None else None,
+                "quantity": float(r[7]) if r[7] is not None else None,
+                "notional_usdt": round(float(r[6] or 0) * float(r[7] or 0), 4),
+                "created_at": r[8].strftime("%d/%m %H:%M") if r[8] else "",
             }
             for r in cur.fetchall()
         ]
@@ -511,6 +518,7 @@ async def get_operations(page: int = 1, limit: int = 50):
         ) = row
 
         meta = _parse_jsonb(signal_meta) or {}
+        wave_meta = meta.get("wave") if isinstance(meta.get("wave"), dict) else {}
         order = {
             "id": str(pid),
             "block_id": block_id,
@@ -528,7 +536,7 @@ async def get_operations(page: int = 1, limit: int = 50):
             "is_futures": venue == "futures",
             "leverage": leverage or 1,
             "score": meta.get("score"),
-            "rsi": meta.get("rsi"),
+            "rsi": meta.get("rsi") if meta.get("rsi") is not None else wave_meta.get("value"),
             "direction": direction or "LONG",
             "tier": tier,
             "strategy": strategy,

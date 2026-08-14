@@ -67,6 +67,50 @@ class CoreExecService:
             return f"{symbol}:USDT"
         return symbol
 
+    def _resolve_fill_price(self, exchange, exchange_symbol: str, order: dict, filled_qty: float) -> float:
+        """Resolve the actual fill price before publishing/persisting an open position."""
+        candidates = [
+            order.get("average"),
+            order.get("price"),
+            (order.get("info") or {}).get("avgPrice"),
+            (order.get("info") or {}).get("averagePrice"),
+        ]
+        for candidate in candidates:
+            try:
+                price = float(candidate or 0)
+                if price > 0:
+                    return price
+            except (TypeError, ValueError):
+                pass
+
+        cost = order.get("cost") or (order.get("info") or {}).get("cumQuote")
+        try:
+            if float(cost or 0) > 0 and filled_qty > 0:
+                return float(cost) / filled_qty
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+
+        order_id = order.get("id")
+        if order_id:
+            try:
+                refreshed = exchange.fetch_order(order_id, exchange_symbol)
+                for candidate in (
+                    refreshed.get("average"),
+                    refreshed.get("price"),
+                    (refreshed.get("info") or {}).get("avgPrice"),
+                    (refreshed.get("info") or {}).get("averagePrice"),
+                ):
+                    price = float(candidate or 0)
+                    if price > 0:
+                        return price
+                cost = refreshed.get("cost") or (refreshed.get("info") or {}).get("cumQuote")
+                if float(cost or 0) > 0 and filled_qty > 0:
+                    return float(cost) / filled_qty
+            except Exception as exc:
+                logger.error("Não foi possível reconciliar preço da ordem %s: %s", order_id, exc)
+
+        raise ValueError(f"Exchange não retornou preço preenchido para a ordem {order_id}")
+
     async def position_exists(self, order: dict) -> bool:
         try:
             await self.kv.get(self._kv_key(order))
@@ -273,8 +317,9 @@ class CoreExecService:
                     params=params,
                 )
 
-            filled_price = float(buy_order.get("average") or buy_order.get("price") or 0)
             filled_qty = float(buy_order.get("filled") or qty_requested)
+            exchange_symbol = ccxt_symbol if venue == "futures" else symbol
+            filled_price = self._resolve_fill_price(exchange, exchange_symbol, buy_order, filled_qty)
             qty_exit = self._resolve_qty_after_fill(exchange, symbol, venue, filled_qty)
 
             if venue == "spot" and exit_cfg.get("mode") == "exchange_oco" and not is_short:

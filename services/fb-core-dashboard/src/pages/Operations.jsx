@@ -2,19 +2,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Spinner, playNewTradeSound } from '../components/UI';
 
-function SLTPBar({ current, sl, tp, entry, entryTime, maxHoldHours }) {
+function SLTPBar({ current, sl, tp, entry, direction = 'LONG', entryTime, maxHoldHours }) {
   if (!entry || !current) return null;
 
   // 1. Barra de Preço (Entry -> TP ou SL -> Entry -> TP)
   let priceProgressHtml = null;
   const slActive = sl && sl > 0;
   
-  if (slActive && tp && tp > sl) {
-    // Modo OCO legado com SL ativo
-    const range = tp - sl;
-    const pct = ((current - sl) / range) * 100;
+  const isShort = direction === 'SHORT';
+  const favorable = isShort ? current <= entry : current >= entry;
+
+  if (slActive && tp && ((isShort && sl > tp) || (!isShort && tp > sl))) {
+    const low = Math.min(sl, tp);
+    const high = Math.max(sl, tp);
+    const range = high - low;
+    const pct = ((current - low) / range) * 100;
     const clamped = Math.max(0, Math.min(100, pct));
-    const barColor = current >= entry ? 'bg-accentGreen' : 'bg-accentRed';
+    const barColor = favorable ? 'bg-accentGreen' : 'bg-accentRed';
     priceProgressHtml = (
       <div className="mt-3">
         <div className="flex justify-between text-xs text-slate-500 mb-1">
@@ -24,7 +28,7 @@ function SLTPBar({ current, sl, tp, entry, entryTime, maxHoldHours }) {
         </div>
         <div className="h-3 bg-slate-700/80 rounded-full relative overflow-hidden">
           <div className={`h-full ${barColor} rounded-full transition-all duration-500`} style={{ width: `${clamped}%` }} />
-          <div className="absolute top-0 bottom-0 w-0.5 bg-white/50" style={{ left: `${((entry - sl) / range) * 100}%` }} />
+          <div className="absolute top-0 bottom-0 w-0.5 bg-white/50" style={{ left: (((entry - low) / range) * 100) + '%' }} />
         </div>
         <div className="text-center text-xs text-slate-400 mt-1">
           ${current.toFixed(6)} ({clamped.toFixed(0)}% até TP)
@@ -123,6 +127,17 @@ function SLTPBar({ current, sl, tp, entry, entryTime, maxHoldHours }) {
   );
 }
 
+function pricePnl(order) {
+  const entry = Number(order.entry_price || 0);
+  const current = Number(order.current_price || entry);
+  const quantity = Number(order.quantity || 0);
+  if (!entry || !current || !quantity) return { pnlDollar: 0, pnlPct: 0 };
+  const isShort = order.direction === 'SHORT';
+  const pnlDollar = (isShort ? entry - current : current - entry) * quantity;
+  const pnlPct = (isShort ? (entry - current) / entry : (current - entry) / entry) * 100;
+  return { pnlDollar, pnlPct };
+}
+
 function TradeChart({ order, onClose }) {
   if (!order.tp_price || !order.entry_price) return null;
   const sl = order.sl_price && order.sl_price > 0 ? order.sl_price : null;
@@ -139,8 +154,12 @@ function TradeChart({ order, onClose }) {
     data.unshift({ name: 'SL', price: sl });
   }
   
-  const min = sl ? sl * 0.998 : entry * 0.98;
-  const max = tp * 1.002;
+  const prices = [entry, current, tp, sl].filter(value => Number.isFinite(value) && value > 0);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const padding = Math.max((maxPrice - minPrice) * 0.08, entry * 0.002);
+  const min = Math.max(0, minPrice - padding);
+  const max = maxPrice + padding;
   
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -245,9 +264,9 @@ export default function Operations() {
 
   if (loading) return <div className="p-6"><Spinner /></div>;
 
-  const totalInvested = data.open.reduce((sum, o) => sum + (o.entry_price * o.quantity), 0);
-  const totalCurrent = data.open.reduce((sum, o) => sum + ((o.current_price || o.entry_price) * o.quantity), 0);
-  const totalReturn = totalCurrent - totalInvested;
+  const totalInvested = data.open.reduce((sum, o) => sum + (Number(o.entry_price || 0) * Number(o.quantity || 0)), 0);
+  const totalReturn = data.open.reduce((sum, o) => sum + pricePnl(o).pnlDollar, 0);
+  const totalCurrent = totalInvested + totalReturn;
 
   // Agrupamento de Histórico por Dia
   const dailyGroups = {};
@@ -352,9 +371,8 @@ export default function Operations() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {data.open.map((order) => {
             const current = order.current_price;
-            const isProfit = current && current >= order.entry_price;
-            const pnlDollar = current ? (current - order.entry_price) * order.quantity : 0;
-            const pnlPct = current ? ((current / order.entry_price) - 1) * 100 : 0;
+            const { pnlDollar, pnlPct } = pricePnl(order);
+            const isProfit = pnlDollar >= 0;
             const wlInfo = order.coin_total > 0 
               ? <span className={`text-xs ${order.coin_wins >= order.coin_losses ? 'text-green-400' : 'text-red-400'}`}>
                   ({order.coin_wins}W/{order.coin_losses}L)
@@ -444,6 +462,7 @@ export default function Operations() {
                     sl={order.sl_price} 
                     tp={order.tp_price} 
                     entry={order.entry_price}
+                    direction={order.direction}
                     entryTime={order.entry_time}
                     maxHoldHours={data.max_hold_hours}
                   />

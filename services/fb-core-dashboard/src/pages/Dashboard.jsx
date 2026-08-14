@@ -24,13 +24,16 @@ export default function Dashboard() {
   const [btcTrend, setBtcTrend] = useState({ trend: "neutral", btc_price: 0, sma: 0, pct: 0 });
 
   useEffect(() => {
-    fetch('/api/dashboard')
+    const fetchDashboard = () => fetch('/api/dashboard')
       .then(res => res.json())
-      .then(data => {
-        setData(data);
+      .then(next => {
+        setData(next);
         setLoading(false);
       })
       .catch(err => console.error(err));
+
+    fetchDashboard();
+    const dashboardInterval = setInterval(fetchDashboard, 30000);
 
     fetch('/api/btc-trend')
       .then(res => res.json())
@@ -43,7 +46,10 @@ export default function Dashboard() {
         .then(setBtcTrend)
         .catch(() => {});
     }, 60000);
-    return () => clearInterval(trendInterval);
+    return () => {
+      clearInterval(trendInterval);
+      clearInterval(dashboardInterval);
+    };
   }, []);
 
   if (loading) {
@@ -151,26 +157,32 @@ export default function Dashboard() {
           <table className="w-full text-left text-slate-300">
             <thead className="text-slate-500 border-b border-slate-700">
               <tr>
+                <th className="pb-3">Estratégia</th>
                 <th className="pb-3">Moeda</th>
+                <th className="pb-3">Direção</th>
+                <th className="pb-3">Mercado</th>
                 <th className="pb-3">Preço Entrada</th>
                 <th className="pb-3">Quantidade</th>
-                <th className="pb-3">Investido</th>
+                <th className="pb-3">Notional</th>
                 <th className="pb-3">Aberto em</th>
               </tr>
             </thead>
             <tbody>
               {data.active_positions.map((pos, index) => (
                 <tr key={index} className="border-b border-slate-700 last:border-b-0">
+                  <td className="py-4 font-medium text-purple-300">{pos.block_id || '—'}</td>
                   <td className="py-4 font-medium text-white">{pos.symbol}</td>
-                  <td className="py-4">${pos.entry_price}</td>
+                  <td className={pos.direction === 'SHORT' ? 'py-4 text-red-400' : 'py-4 text-blue-400'}>{pos.direction}</td>
+                  <td className="py-4">{pos.venue === 'futures' ? 'Futures' : 'Spot'}</td>
+                  <td className="py-4">${Number(pos.entry_price || 0).toFixed(6)}</td>
                   <td className="py-4">{pos.quantity}</td>
-                  <td className="py-4">${(pos.entry_price * pos.quantity).toFixed(2)}</td>
+                  <td className="py-4">${Number(pos.notional_usdt || 0).toFixed(2)}</td>
                   <td className="py-4">{pos.created_at}</td>
                 </tr>
               ))}
               {data.active_positions.length === 0 && (
                 <tr>
-                  <td colSpan="5" className="py-4 text-center text-slate-500">Nenhuma posição aberta no banco de dados.</td>
+                  <td colSpan="8" className="py-4 text-center text-slate-500">Nenhuma posição aberta no banco de dados.</td>
                 </tr>
               )}
             </tbody>

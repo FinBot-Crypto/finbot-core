@@ -16,6 +16,7 @@ services:
     environment:
       <<: *common-env
       MAX_POSITIONS: ${MAX_POSITIONS:-20}
+      MAX_ORDER_NOTIONAL_USDT: ${MAX_ORDER_NOTIONAL_USDT:-25}
     networks: [crypto-network]
 
   fb-core-monitor:
@@ -47,4 +48,3 @@ services:
 networks:
   crypto-network:
     external: true
-

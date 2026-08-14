@@ -13,37 +13,44 @@ function SLTPBar({ current, sl, tp, entry, direction = 'LONG', entryTime, maxHol
   const favorable = isShort ? current <= entry : current >= entry;
 
   if (slActive && tp && ((isShort && sl > tp) || (!isShort && tp > sl))) {
-    const low = Math.min(sl, tp);
-    const high = Math.max(sl, tp);
+    const low = Math.min(sl, tp, entry);
+    const high = Math.max(sl, tp, entry);
     const range = high - low;
     const pct = ((current - low) / range) * 100;
     const clamped = Math.max(0, Math.min(100, pct));
     const barColor = favorable ? 'bg-accentGreen' : 'bg-accentRed';
+    const targetPct = Math.max(0, Math.min(100, isShort
+      ? ((entry - current) / (entry - tp)) * 100
+      : ((current - entry) / (tp - entry)) * 100));
     priceProgressHtml = (
       <div className="mt-3">
         <div className="flex justify-between text-xs text-slate-500 mb-1">
-          <span>SL ${sl.toFixed(6)}</span>
+          <span>{isShort ? 'TP' : 'SL'} ${Math.min(sl, tp).toFixed(6)}</span>
           <span className="text-slate-400">Entry ${entry.toFixed(6)}</span>
-          <span>TP ${tp.toFixed(6)}</span>
+          <span>{isShort ? 'SL' : 'TP'} ${Math.max(sl, tp).toFixed(6)}</span>
         </div>
         <div className="h-3 bg-slate-700/80 rounded-full relative overflow-hidden">
           <div className={`h-full ${barColor} rounded-full transition-all duration-500`} style={{ width: `${clamped}%` }} />
           <div className="absolute top-0 bottom-0 w-0.5 bg-white/50" style={{ left: (((entry - low) / range) * 100) + '%' }} />
         </div>
         <div className="text-center text-xs text-slate-400 mt-1">
-          ${current.toFixed(6)} ({clamped.toFixed(0)}% até TP)
+          ${current.toFixed(6)} ({targetPct.toFixed(0)}% até TP)
         </div>
       </div>
     );
-  } else if (tp && tp > entry) {
+  } else if (tp && ((isShort && tp < entry) || (!isShort && tp > entry))) {
     // Novo modo sem SL (Entry -> TP) com suporte a preço negativo com limite dinâmico
     const defaultFloor = entry - (tp - entry) * (30 / 70);
-    // Se a perda for maior que o defaultFloor, esticamos a escala (deixando margem de 50% além do atual)
-    const minPrice = current < entry 
-      ? Math.min(defaultFloor, current - (entry - current) * 0.5) 
-      : defaultFloor;
+    const defaultCeiling = entry + (entry - tp) * (30 / 70);
+    // If price moves beyond the default scale, add margin beyond current price.
+    const minPrice = !isShort && current < entry
+      ? Math.min(defaultFloor, current - (entry - current) * 0.5)
+      : tp;
+    const maxPrice = isShort && current > entry
+      ? Math.max(defaultCeiling, current + (current - entry) * 0.5)
+      : entry > tp ? Math.max(entry, defaultCeiling) : tp;
 
-    const totalRange = tp - minPrice;
+    const totalRange = maxPrice - minPrice;
     const entryPct = ((entry - minPrice) / totalRange) * 100;
     const currentPct = ((current - minPrice) / totalRange) * 100;
 
@@ -55,25 +62,32 @@ function SLTPBar({ current, sl, tp, entry, direction = 'LONG', entryTime, maxHol
     let barColor = 'bg-accentGreen';
     let progressLabel = '';
 
-    if (current >= entry) {
+    if ((isShort && current <= entry) || (!isShort && current >= entry)) {
       leftPos = clampedEntryPct;
-      widthPct = Math.max(0, clampedCurrentPct - clampedEntryPct);
+      widthPct = isShort
+        ? Math.max(0, clampedEntryPct - clampedCurrentPct)
+        : Math.max(0, clampedCurrentPct - clampedEntryPct);
       barColor = 'bg-accentGreen';
-      const pctToTP = ((current - entry) / (tp - entry)) * 100;
-      progressLabel = `+${((current / entry - 1) * 100).toFixed(2)}% do entry (${pctToTP.toFixed(0)}% do TP)`;
+      const pctToTP = isShort
+        ? ((entry - current) / (entry - tp)) * 100
+        : ((current - entry) / (tp - entry)) * 100;
+      const movePct = (isShort ? (entry / current - 1) : (current / entry - 1)) * 100;
+      progressLabel = `+${movePct.toFixed(2)}% do entry (${pctToTP.toFixed(0)}% do TP)`;
     } else {
-      leftPos = clampedCurrentPct;
-      widthPct = Math.max(0, clampedEntryPct - clampedCurrentPct);
+      leftPos = isShort ? clampedEntryPct : clampedCurrentPct;
+      widthPct = isShort
+        ? Math.max(0, clampedCurrentPct - clampedEntryPct)
+        : Math.max(0, clampedEntryPct - clampedCurrentPct);
       barColor = 'bg-accentRed';
-      progressLabel = `${((current / entry - 1) * 100).toFixed(2)}% abaixo do entry`;
+      progressLabel = `${((isShort ? current / entry - 1 : current / entry - 1) * 100).toFixed(2)}% ${isShort ? 'acima' : 'abaixo'} do entry`;
     }
 
     priceProgressHtml = (
       <div className="mt-3">
         <div className="relative text-xs text-slate-500 mb-1 h-4">
-          <span className="absolute left-0 text-slate-500/80">Min ${minPrice.toFixed(6)}</span>
+          <span className="absolute left-0 text-slate-500/80">{isShort ? 'TP' : 'Min'} ${minPrice.toFixed(6)}</span>
           <span className="absolute text-slate-400 font-bold" style={{ left: `${clampedEntryPct}%`, transform: 'translateX(-50%)' }}>Entry ${entry.toFixed(6)}</span>
-          <span className="absolute right-0 text-slate-500">TP ${tp.toFixed(6)}</span>
+          <span className="absolute right-0 text-slate-500">{isShort ? 'Max' : 'TP'} ${maxPrice.toFixed(6)}</span>
         </div>
         <div className="h-3 bg-slate-700/80 rounded-full relative overflow-hidden">
           {/* Barra de progresso bidirecional */}

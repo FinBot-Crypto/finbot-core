@@ -31,7 +31,8 @@ Migrations em `init/`:
 | `002_v2_schema.sql` | Schema v2 (positions, block_settings, …) |
 | `003_v2_seed.sql` | Seed Leme 100% |
 
-Cutover manual (produção): ver `finbot-v2/scripts/v2_cutover.sh`
+As migrations de produção são aplicadas pelo workflow do `finbot-core`, em
+`../scripts/migrations/`, incluindo as migrations específicas de Leme e Maré.
 
 > **Por que não tem Redis?**
 > NATS JetStream inclui um **Key-Value Store** nativo que substitui o Redis para cache de estado (posições ativas, top assets, status do sistema). Menos um componente para gerenciar = menos complexidade em produção.
@@ -42,7 +43,7 @@ Cutover manual (produção): ver `finbot-v2/scripts/v2_cutover.sh`
 ssh oracle
 
 # Estrutura de produção
-cd ~/crypto-bot/infra
+cd ~/finbot-core/infra
 
 # Configurar variáveis
 cp .env.example .env

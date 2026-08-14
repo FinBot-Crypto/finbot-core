@@ -146,12 +146,26 @@ def _fetch_all_binance_data(symbols_to_fetch):
     t0 = _time.time()
     if symbols_to_fetch:
         try:
-            tickers = _get_spot_ex().fetch_tickers(symbols_to_fetch)
-            for sym in symbols_to_fetch:
-                if sym in tickers:
-                    current_prices[sym] = tickers[sym].get("last")
+            unique_symbols = list(dict.fromkeys(symbols_to_fetch))
+            tickers = _get_spot_ex().fetch_tickers(unique_symbols)
+            for sym in unique_symbols:
+                ticker = (tickers or {}).get(sym) or {}
+                if ticker.get("last") is not None:
+                    current_prices[sym] = ticker["last"]
         except Exception as e:
             print(f"[PERF] ERRO fetch_tickers: {e}")
+
+        # A transient bulk-ticker failure must not render all open cards as
+        # unknown. Reconcile missing symbols individually before returning.
+        for sym in dict.fromkeys(symbols_to_fetch):
+            if current_prices.get(sym) is not None:
+                continue
+            try:
+                ticker = _get_spot_ex().fetch_ticker(sym)
+                if ticker.get("last") is not None:
+                    current_prices[sym] = ticker["last"]
+            except Exception as e:
+                print(f"[PERF] ERRO fetch_ticker {sym}: {e}")
 
     spot_balances, futures_balances = _get_binance_balances(_get_spot_ex(), _get_futures_ex())
     print(f"[PERF] _fetch_all_binance_data TOTAL: {(_time.time() - t0) * 1000:.0f}ms")
@@ -368,7 +382,8 @@ async def get_operations(page: int = 1, limit: int = 50):
                    exit_reason, pnl_pct,
                    opened_at {TZ_EXPR},
                    COALESCE(closed_at, updated_at) {TZ_EXPR},
-                   venue, leverage, signal_meta, direction, tier, sl_price, tp_price, strategy
+                   venue, leverage, signal_meta, direction, tier, sl_price, tp_price,
+                   exit_config, strategy
             FROM positions
             ORDER BY opened_at DESC
             LIMIT %s OFFSET %s
@@ -441,7 +456,10 @@ async def get_operations(page: int = 1, limit: int = 50):
     kv_by_client = {}
     kv_by_composite = {}
     kv_by_symbol = {}
-    symbols_to_fetch = []
+    symbols_to_fetch = [
+        row[3] for row in rows
+        if row[4] == "OPEN" and row[3]
+    ]
     try:
         nc = await get_nats()
         js = nc.jetstream()
@@ -467,6 +485,7 @@ async def get_operations(page: int = 1, limit: int = 50):
                     "leverage": pos.get("leverage", 1),
                     "score": (pos.get("signal") or {}).get("score"),
                     "rsi": (pos.get("signal") or {}).get("rsi"),
+                    "max_hold_hours": exit_cfg.get("max_hold_hours"),
                 }
 
                 client_id = pos.get("client_order_id")
@@ -514,10 +533,12 @@ async def get_operations(page: int = 1, limit: int = 50):
             tier,
             sl_price,
             tp_price,
+            exit_config,
             strategy,
         ) = row
 
         meta = _parse_jsonb(signal_meta) or {}
+        exit_meta = _parse_jsonb(exit_config) or {}
         wave_meta = meta.get("wave") if isinstance(meta.get("wave"), dict) else {}
         order = {
             "id": str(pid),
@@ -542,6 +563,8 @@ async def get_operations(page: int = 1, limit: int = 50):
             "strategy": strategy,
             "sl_price": float(sl_price) if sl_price is not None else None,
             "tp_price": float(tp_price) if tp_price is not None else None,
+            "max_hold_hours": float(exit_meta["max_hold_hours"])
+            if exit_meta.get("max_hold_hours") is not None else None,
         }
 
         if status == "OPEN":
@@ -559,6 +582,8 @@ async def get_operations(page: int = 1, limit: int = 50):
                 order["score"] = kv_info["score"]
             if kv_info.get("rsi") is not None:
                 order["rsi"] = kv_info["rsi"]
+            if kv_info.get("max_hold_hours") is not None:
+                order["max_hold_hours"] = float(kv_info["max_hold_hours"])
 
             price = binance_prices.get(symbol)
             if price is None and "/" not in symbol:

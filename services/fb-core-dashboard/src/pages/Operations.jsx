@@ -395,7 +395,8 @@ export default function Operations() {
 
             const elapsedSeconds = order.entry_time ? (Date.now() / 1000) - order.entry_time : 0;
             const elapsedHours = elapsedSeconds / 3600;
-            const remainingHours = Math.max(0, data.max_hold_hours - elapsedHours);
+            const maxHoldHours = Number(order.max_hold_hours || data.max_hold_hours || 12);
+            const remainingHours = Math.max(0, maxHoldHours - elapsedHours);
             const remainingText = order.entry_time 
               ? `${remainingHours.toFixed(1)}h restam`
               : null;
@@ -478,7 +479,7 @@ export default function Operations() {
                     entry={order.entry_price}
                     direction={order.direction}
                     entryTime={order.entry_time}
-                    maxHoldHours={data.max_hold_hours}
+                    maxHoldHours={maxHoldHours}
                   />
                 </div>
               </div>

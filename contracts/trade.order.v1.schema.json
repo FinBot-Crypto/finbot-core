@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://finbot.crypto/contracts/trade.order.v1.schema.json",
+  "title": "FinBot Trade Order v1",
+  "type": "object",
+  "required": ["schema_version", "order_id", "client_order_id", "block_id", "strategy", "symbol", "direction", "tier", "venue", "leverage", "entry", "quantity", "notional_usdt", "exit", "execution"],
+  "properties": {
+    "schema_version": {"const": "trade.order.v1"},
+    "order_id": {"type": "string"},
+    "client_order_id": {"type": "string", "maxLength": 36},
+    "block_id": {"type": "string", "minLength": 1},
+    "strategy": {"type": "string", "minLength": 1},
+    "symbol": {"type": "string", "pattern": "^[A-Z0-9]+/[A-Z0-9]+$"},
+    "direction": {"enum": ["LONG", "SHORT"]},
+    "tier": {"type": "string"},
+    "venue": {"enum": ["spot", "futures"]},
+    "leverage": {"type": "integer", "minimum": 1},
+    "quantity": {"type": "number", "exclusiveMinimum": 0},
+    "notional_usdt": {"type": "number", "exclusiveMinimum": 0}
+  },
+  "additionalProperties": true
+}
+

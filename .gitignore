@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+dist/
+scratch/
+services/fb-core-dashboard/node_modules/
+services/fb-core-dashboard/dist/
+

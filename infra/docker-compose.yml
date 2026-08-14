@@ -1,0 +1,62 @@
+# =============================================================
+# Finanças Crypto Bot — Infraestrutura de Produção
+# =============================================================
+# Deploy:
+#   cd ~/crypto-bot/infra && docker compose up -d
+#
+# Verificar saúde:
+#   docker compose ps
+# =============================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: crypto-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  nats:
+    image: nats:2-alpine
+    container_name: crypto-nats
+    restart: unless-stopped
+    volumes:
+      - nats_data:/data
+      - ./nats.conf:/etc/nats/nats-server.conf:ro
+    ports:
+      - "127.0.0.1:${NATS_PORT:-4222}:4222"
+      - "127.0.0.1:${NATS_MONITOR_PORT:-8222}:8222"
+    networks:
+      - crypto-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+networks:
+  crypto-network:
+    name: crypto-network
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: crypto-postgres-data
+  nats_data:
+    name: crypto-nats-data

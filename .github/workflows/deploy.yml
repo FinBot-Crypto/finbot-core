@@ -30,9 +30,13 @@ jobs:
           done
       - name: Build and start Core
         working-directory: /root/finbot-core
-        run: docker compose --env-file .env up -d --build
+        run: |
+          set -e
+          for container in fb-core-exec fb-core-monitor fb-core-dashboard; do
+            docker rm -f "$container" 2>/dev/null || true
+          done
+          docker compose --env-file .env up -d --build
       - name: Health check
         run: |
           docker ps --filter name=fb-core --format '{{.Names}} {{.Status}}'
           curl -sf http://localhost:8000/api/status
-
